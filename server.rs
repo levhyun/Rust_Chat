@@ -33,6 +33,8 @@ fn main() {
             println!("client {} connected", addr);
             let tx = tx.clone();
             clients.push(socket.try_clone().expect("failed to clone client"));
+            let msg = format!("※ [{}]님이 입장하셨습니다. ※",addr);
+            tx.send(msg).expect("failed to send message to rx");
             thread::spawn(move || loop {
                 let mut buff = vec![0; MSG_SIZE];
                 match socket.read_exact(&mut buff) {
