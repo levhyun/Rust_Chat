@@ -4,11 +4,9 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-const MSG_SIZE: usize = 100;
+const MSG_SIZE: usize = 1000;
 
-fn main() {
-    println!("[Server]");
-
+fn server() -> String {
     println!("\nEnter server ip");
     let mut ip = String::new();
     io::stdin().read_line(&mut ip).expect("Reading from stdin failed");
@@ -21,7 +19,13 @@ fn main() {
 
     let server_address = format!("{}{}{}", &server_ip, &String::from(":"), &server_port);
 
-    let server = TcpListener::bind(server_address).expect("Lister failed to bind");
+    server_address
+}
+
+fn main() {
+    println!("[Server]");
+
+    let server = TcpListener::bind(server()).expect("Lister failed to bind");
     server.set_nonblocking(true).expect("failed to initialize non blocking listener");
 
     println!("\nWaiting for client connection..");
@@ -30,11 +34,28 @@ fn main() {
     let (tx, rx) = mpsc::channel::<String>();
     loop {
         if let Ok((mut socket, addr)) = server.accept() {
-            println!("client {} connected", addr);
             let tx = tx.clone();
             clients.push(socket.try_clone().expect("failed to clone client"));
-            let msg = format!("※ [{}]님이 입장하셨습니다. ※",addr);
-            tx.send(msg).expect("failed to send message to rx");
+
+            let mut finalname = "".to_string();
+            let mut name_buff = vec![0; MSG_SIZE];
+            match socket.read_exact(&mut name_buff) {
+                Ok(_) => {
+                    let name = name_buff.into_iter().take_while(|&x| x != 0).collect::<Vec<_>>();
+                    let name = String::from_utf8(name).expect("invalid utf8 name");
+                    let msg = format!("[{}]{}님이 입장하셨습니다.", addr, name);
+                    tx.send(msg).expect("failed to send message to rx");
+                    finalname = name.clone();
+                },
+                Err(ref err) if err.kind() == ErrorKind::WouldBlock => (),
+                Err(_) => {
+                    println!("Error loading client name");
+                    break;
+                }
+            }
+
+            println!("client [{}]{} connected", addr, finalname);
+
             thread::spawn(move || loop {
                 let mut buff = vec![0; MSG_SIZE];
                 match socket.read_exact(&mut buff) {
@@ -44,13 +65,13 @@ fn main() {
 
                         println!("[{}]{}", addr, msg);
 
-                        let msg = format!("{}{}{}{}", &String::from("["), addr, &String::from("]"), &msg);
+                        let msg = format!("[{}]{}님이 {}을(를) 입력하셨습니다.", addr, finalname, &msg);
                         tx.send(msg).expect("failed to send message to rx");
                     },
                     Err(ref err) if err.kind() == ErrorKind::WouldBlock => (),
                     Err(_) => {
-                        println!("Closing connection with [{}]", addr);
-                        let msg = format!("※ [{}]님이 퇴장하셨습니다. ※",addr);
+                        println!("Closing connection with [{}]{}}", addr, finalname);
+                        let msg = format!("[{}]{}님이 퇴장하셨습니다.", addr, finalname);
                         tx.send(msg).expect("failed to send message to rx");
                         break;
                     }

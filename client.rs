@@ -4,7 +4,7 @@ use std::sync::mpsc::{self, TryRecvError};
 use std::thread;
 use std::time::Duration;
 
-const MSG_SIZE: usize = 100;
+const MSG_SIZE: usize = 1000;
 
 fn main() {
     println!("[Client]");
@@ -14,20 +14,24 @@ fn main() {
     io::stdin().read_line(&mut address).expect("Reading from stdin failed");
     let server_address = address.trim().to_string();
 
+    println!("\nwhat is your name?");
+    let mut name_buff = String::new();
+    io::stdin().read_line(&mut name_buff).expect("Reading from stdin failed");
+    let name = name_buff.trim().to_string();
+
     let mut client = TcpStream::connect(server_address).expect("stream failed to connect");
     client.set_nonblocking(true).expect("fialed to initialize non-blocking");
 
     let (tx, rx) = mpsc::channel::<String>();
     thread::spawn(move || loop {
-        // Read message:
         let mut buff = vec![0; MSG_SIZE];
         match client.read_exact(&mut buff) {
             Ok(_) => {
                 let msg_byte_vec = buff.into_iter().take_while(|&x| x != 0).collect::<Vec<_>>();
                 let msg = String::from_utf8(msg_byte_vec).expect("invalid utf8 message");
-                println!("---------------------------------------------------------");
+                println!("----------------------------------------------------------------------------------------------------");
                 println!("{}", msg);
-                println!("---------------------------------------------------------");
+                println!("----------------------------------------------------------------------------------------------------");
             },
             Err(ref err) if err.kind() == ErrorKind::WouldBlock => (),
             Err(_) => {
@@ -36,7 +40,6 @@ fn main() {
             }
         }
 
-        // Receive message from channel and Write message to the server
         match rx.try_recv() {
             Ok(msg) => {
                 let mut buff = msg.clone().into_bytes();
@@ -49,17 +52,17 @@ fn main() {
 
         thread::sleep(Duration::from_millis(100));
     });
-
-    println!("\nwhat is your name?");
-    let mut name_buff = String::new();
-    io::stdin().read_line(&mut name_buff).expect("Reading from stdin failed");
-    let name = name_buff.trim().to_string();
-    println!("\nPlease enter a message to send");
+    
+    let give_name = format!("{}", &name);
+    if tx.send(give_name).is_err() { 
+        println!("Error sending name to server"); 
+    }
+    println!("\nPlease enter a message to send..\n\n");
 
     loop {
         let mut buff = String::new();
         io::stdin().read_line(&mut buff).expect("Reading from stdin failed");
-        let msg = format!("{}{}{:?}{}", &name, &String::from("님이 "), &buff.trim().to_string(), &String::from("을(를) 입력하셨습니다."));
+        let msg = format!("{:?}", &buff.trim().to_string());
         if tx.send(msg).is_err() { break }
     }
 
